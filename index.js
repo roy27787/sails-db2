@@ -134,13 +134,25 @@ module.exports = (function () {
             case 'date':
                 type = 'DATE';
                 break;
+            //BUG FIX START
+            case 'datetime':
+                type = 'TIMESTAMP';
+                break;
+            case 'boolean':
+                type='SMALLINT';
+                break;
+            //BUG FIX END
         }
 
         return type;
     };
 
     me.getSelectAttributes = function (collection) {
-        return _.keys(collection.definition).join(',');
+        
+        //BUG FIX: Save original field case
+        return _.map(_.keys(collection.definition),function(col){return col + " as " + '"' + col +  '"'}).join(",")
+        //END BUG FIX
+        //return _.keys(collection.definition).join(',');
     };
 
     me.closeConnection = function (connection) {
@@ -265,10 +277,15 @@ module.exports = (function () {
         define: function (connectionName, collectionName, definition, cb) {
             var connection = me.connections[connectionName],
                 collection = connection.collections[collectionName],
+                //BUG FIX START
+                collectionName = me.getTableName(collectionName, connection.config.schemaDB2),
                 query = 'CREATE TABLE ' + collectionName,
+                //BUG FIX END
                 schemaData = [],
                 schemaQuery = '';
-
+                if (collectionName==" ORM_TEST.poslocations "){
+                    var a=1
+                }
             _.each(definition, function (attribute, attrName) {
                 var attrType = me.getSqlType(attribute.type),
                     attrQuery = attrName;
@@ -411,7 +428,7 @@ module.exports = (function () {
         },
 
 
-        // OVERRIDES NOT CURRENTLY FULLY SUPPORTED FOR:
+    // OVERRIDES NOT CURRENTLY FULLY SUPPORTED FOR:
         //
         // alter: function (collectionName, changes, cb) {},
         // addAttribute: function(collectionName, attrName, attrDef, cb) {},
@@ -487,15 +504,36 @@ module.exports = (function () {
                             param.forEach(function (val) {
                                 whereArr.push(column + ' = ?');
                                 if (collection.definition[column].type === 'boolean') params.push(val === true ? 1 : 0);
+                                else  if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
                                 else params.push(val);
                             });
                             whereData.push('(' + whereArr.join(' OR ') + ')');
                         }
                         else {
                             if (collection.definition.hasOwnProperty(column)) {
-                                whereData.push(column + ' = ?');
-                                if (collection.definition[column].type === 'boolean') params.push(param === true ? 1 : 0);
-                                else params.push(param);
+                                v = param
+                                val = param
+                                if (_.isObject(val)){
+                                    if ("contains" in val){
+                                        if (!_.isArray(val["contains"])) val["contains"] = [val["contains"]]                      
+                                            var qs = "(" + _.map(val["contains"],function(d){
+                                                  if (collection.definition[column].type === 'boolean') params.push(d === true ? 1 : 0);
+                                                  else  if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
+                                                  else params.push(d);
+                                                 return "?"
+                                                }).join(",") + ")"
+                                            whereData.push(column + ' IN ' + qs );
+
+                                    }
+                                }
+                                else{
+                                    whereData.push(column + ' = ?');
+                                    if (collection.definition[column].type === 'boolean') params.push(param === true ? 1 : 0);
+                                    else  if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
+                                    else params.push(param);
+                                }
+
+
                             }
                         }
                     });
@@ -565,6 +603,9 @@ module.exports = (function () {
                         if (collection.definition.hasOwnProperty(column)) {
                             columns.push(column);
                             if (collection.definition[column].type === 'boolean') params.push(param === true ? 1 : 0);
+                            //BUG FIX START
+                            else if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
+                            //BUG FIX END
                             else params.push(param);
                             questions.push('?');
                         }
@@ -616,6 +657,9 @@ module.exports = (function () {
                         if (collection.definition.hasOwnProperty(column) && !collection.definition[column].autoIncrement) {
                             setData.push(column + ' = ?');
                             if (collection.definition[column].type === 'boolean') params.push(param === true ? 1 : 0);
+                            //BUG FIX START
+                            else if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
+                            //BUG FIX END
                             else params.push(param);
                         }
                     });
@@ -625,6 +669,9 @@ module.exports = (function () {
                         if (collection.definition.hasOwnProperty(column)) {
                             whereData.push(column + ' = ?');
                             if (collection.definition[column].type === 'boolean') params.push(param === true ? 1 : 0);
+                            //BUG FIX START
+                            else if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
+                            //BUG FIX END
                             else params.push(param);
                         }
                     });
