@@ -6,6 +6,30 @@ var async = require('async'),
     db2 = require('ibm_db'),
     WaterlineAdapterErrors = require('waterline-errors').adapter;
 
+
+var cleanValue = function(param,type){
+    var newParam = null;
+    
+    switch (type){
+        case 'boolean':
+            newParam=param === true ? 1 : 0;
+            break
+        case 'datetime':
+            var dt = param;
+            try {
+                dt = param.toISOString();
+            }
+            catch(e){
+                dt = ''
+            }
+            newParam = param.toISOString().replace(/:/g, '.').replace("T",'-').replace('Z','');
+            break;
+        default:
+            newParam = param;
+
+    }
+    return newParam;
+}
 /**
  * Sails Boilerplate Adapter
  *
@@ -134,25 +158,19 @@ module.exports = (function () {
             case 'date':
                 type = 'DATE';
                 break;
-            //BUG FIX START
             case 'datetime':
                 type = 'TIMESTAMP';
                 break;
             case 'boolean':
-                type='SMALLINT';
+                type = 'BOOLEAN';
                 break;
-            //BUG FIX END
         }
 
         return type;
     };
 
     me.getSelectAttributes = function (collection) {
-        
-        //BUG FIX: Save original field case
-        return _.map(_.keys(collection.definition),function(col){return col + " as " + '"' + col +  '"'}).join(",")
-        //END BUG FIX
-        //return _.keys(collection.definition).join(',');
+        return _.keys(collection.definition).join(',');
     };
 
     me.closeConnection = function (connection) {
@@ -277,15 +295,10 @@ module.exports = (function () {
         define: function (connectionName, collectionName, definition, cb) {
             var connection = me.connections[connectionName],
                 collection = connection.collections[collectionName],
-                //BUG FIX START
-                collectionName = me.getTableName(collectionName, connection.config.schemaDB2),
                 query = 'CREATE TABLE ' + collectionName,
-                //BUG FIX END
                 schemaData = [],
                 schemaQuery = '';
-                if (collectionName==" ORM_TEST.poslocations "){
-                    var a=1
-                }
+
             _.each(definition, function (attribute, attrName) {
                 var attrType = me.getSqlType(attribute.type),
                     attrQuery = attrName;
@@ -317,7 +330,8 @@ module.exports = (function () {
             });
             schemaQuery += '(' + schemaData.join(',') + ')';
 
-            query += ' ' + schemaQuery;
+            query += ' ' + schemaQuery + " ORGANIZE BY ROW";
+            //console.log(query);
             // @todo: use DB2 Database describe method instead of a SQL Query
             return adapter.query(connectionName, collectionName, query, function (err, result) {
                 if (err) {
@@ -428,7 +442,7 @@ module.exports = (function () {
         },
 
 
-    // OVERRIDES NOT CURRENTLY FULLY SUPPORTED FOR:
+        // OVERRIDES NOT CURRENTLY FULLY SUPPORTED FOR:
         //
         // alter: function (collectionName, changes, cb) {},
         // addAttribute: function(collectionName, attrName, attrDef, cb) {},
@@ -442,7 +456,7 @@ module.exports = (function () {
                 cb = data;
                 data = null;
             }
-
+            //console.log(query,JSON.stringify(data));
             var connection = me.connections[connectionName],
                 connectionString = me.getConnectionString(connection),
                 __QUERY__ = function () {
@@ -451,7 +465,7 @@ module.exports = (function () {
                         if (err) return cb(err);
                         cb(null, records);
                     };
-
+                    //console.log(query);
                     if (_.isArray(data) && data.length > 0) openConnection.query(query, data, callback);
                     else openConnection.query(query, callback);
                 },
@@ -491,7 +505,10 @@ module.exports = (function () {
                         fromQuery = ' FROM ' + me.getTableName(collection.tableName, connection.config.schemaDB2),
                         whereData = [],
                         whereQuery = '',
-                        limitQuery = !_.isEmpty(options.limit) ? ' FETCH FIRST ' + options.limit + ' ROWS ONLY ' : '',
+                        //limitQuery = !_.isEmpty(options.limit) ? ' FETCH FIRST ' + options.limit + ' ROWS ONLY ' : '',
+                        //TODO:GIVE PROPER CREDIT TO CONTRIBUTOR THIS WAS MERGED FROM
+                        limitQuery = ((options.limit != null) && (!isNaN(options.limit))) ? ' LIMIT ' + options.limit + ' ' : '',
+                        offsetQuery = ((options.skip != null) && (!isNaN(options.skip))) ? ' OFFSET ' + options.skip + ' ' : '',
                         sortData = [],
                         sortQuery = '',
                         params = [],
@@ -502,38 +519,19 @@ module.exports = (function () {
                         if (_.isArray(param)) {
                             var whereArr = [];
                             param.forEach(function (val) {
-                                whereArr.push(column + ' = ?');
-                                if (collection.definition[column].type === 'boolean') params.push(val === true ? 1 : 0);
-                                else  if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
-                                else params.push(val);
+                                      whereArr.push(column + ' = ?');
+                                    params.push(cleanValue(val,collection.definition[column].type))
                             });
                             whereData.push('(' + whereArr.join(' OR ') + ')');
                         }
+                        else if (param['contains'] != null) {
+                                                       whereData.push(column + ' LIKE ?');
+                                                       params.push( '%' + param['contains'] + '%' );
+                                                }
                         else {
                             if (collection.definition.hasOwnProperty(column)) {
-                                v = param
-                                val = param
-                                if (_.isObject(val)){
-                                    if ("contains" in val){
-                                        if (!_.isArray(val["contains"])) val["contains"] = [val["contains"]]                      
-                                            var qs = "(" + _.map(val["contains"],function(d){
-                                                  if (collection.definition[column].type === 'boolean') params.push(d === true ? 1 : 0);
-                                                  else  if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
-                                                  else params.push(d);
-                                                 return "?"
-                                                }).join(",") + ")"
-                                            whereData.push(column + ' IN ' + qs );
-
-                                    }
-                                }
-                                else{
-                                    whereData.push(column + ' = ?');
-                                    if (collection.definition[column].type === 'boolean') params.push(param === true ? 1 : 0);
-                                    else  if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
-                                    else params.push(param);
-                                }
-
-
+                                whereData.push(column + ' = ?');
+                                params.push(cleanValue(param,collection.definition[column].type))
                             }
                         }
                     });
@@ -552,6 +550,7 @@ module.exports = (function () {
                     if (sortQuery.length > 0) sortQuery = ' ORDER BY ' + sortQuery;
 
                     sqlQuery += selectQuery + fromQuery + whereQuery + sortQuery + limitQuery;
+                    //console.log(sqlQuery,JSON.stringify(params));
                     openConnection.query(sqlQuery, params, function (err, result) {
                         me.closeConnection(openConnection);
                         if (err) return cb(err);
@@ -602,16 +601,13 @@ module.exports = (function () {
                     _.each(values, function (param, column) {
                         if (collection.definition.hasOwnProperty(column)) {
                             columns.push(column);
-                            if (collection.definition[column].type === 'boolean') params.push(param === true ? 1 : 0);
-                            //BUG FIX START
-                            else if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
-                            //BUG FIX END
-                            else params.push(param);
+                            params.push(cleanValue(param,collection.definition[column].type))
                             questions.push('?');
                         }
                     });
-
-                    openConnection.query('SELECT ' + selectQuery + ' FROM FINAL TABLE (INSERT INTO ' + me.getTableName(collection.tableName, connection.config.schemaDB2) + ' (' + columns.join(',') + ') VALUES (' + questions.join(',') + '))', params, function (err, results) {
+                    var query = 'SELECT ' + selectQuery + ' FROM FINAL TABLE (INSERT INTO ' + me.getTableName(collection.tableName, connection.config.schemaDB2) + ' (' + columns.join(',') + ') VALUES (' + questions.join(',') + '))';
+                    //console.log(query,JSON.stringify(params));
+                    openConnection.query(query, params, function (err, results) {
                         me.closeConnection(openConnection);
                         if (err) cb(err);
                         else cb(null, results[0]);
@@ -656,11 +652,7 @@ module.exports = (function () {
                     _.each(values, function (param, column) {
                         if (collection.definition.hasOwnProperty(column) && !collection.definition[column].autoIncrement) {
                             setData.push(column + ' = ?');
-                            if (collection.definition[column].type === 'boolean') params.push(param === true ? 1 : 0);
-                            //BUG FIX START
-                            else if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
-                            //BUG FIX END
-                            else params.push(param);
+                            params.push(cleanValue(param,collection.definition[column].type))
                         }
                     });
                     setQuery = ' SET ' + setData.join(',');
@@ -668,11 +660,7 @@ module.exports = (function () {
                     _.each(options.where, function (param, column) {
                         if (collection.definition.hasOwnProperty(column)) {
                             whereData.push(column + ' = ?');
-                            if (collection.definition[column].type === 'boolean') params.push(param === true ? 1 : 0);
-                            //BUG FIX START
-                            else if (collection.definition[column].type === 'datetime') params.push(param.toISOString().replace("T"," ").substr(0,19));
-                            //BUG FIX END
-                            else params.push(param);
+                            params.push(cleanValue(param,collection.definition[column].type))
                         }
                     });
                     whereQuery += whereData.join(' AND ');
@@ -680,7 +668,7 @@ module.exports = (function () {
                     if (whereQuery.length > 0) whereQuery = ' WHERE ' + whereQuery;
 
                     sqlQuery = 'SELECT ' + selectQuery + ' FROM FINAL TABLE (UPDATE ' + me.getTableName(collection.tableName, connection.config.schemaDB2) + setQuery + whereQuery + ')';
-
+                    //console.log(sqlQuery,JSON.stringify(params))
                     openConnection.query(sqlQuery, params, function (err, results) {
                         me.closeConnection(openConnection);
                         if (err) return cb(err);
@@ -720,8 +708,7 @@ module.exports = (function () {
                     _.each(options.where, function (param, column) {
                         if (collection.definition.hasOwnProperty(column)) {
                             whereData.push(column + ' = ?');
-                            if (collection.definition[column].type === 'boolean') params.push(param === true ? 1 : 0);
-                            else params.push(param);
+                            params.push(cleanValue(param,collection.definition[column].type))
                         }
                     });
                     whereQuery += whereData.join(' AND ');
