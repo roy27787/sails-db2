@@ -295,7 +295,7 @@ module.exports = (function () {
         define: function (connectionName, collectionName, definition, cb) {
             var connection = me.connections[connectionName],
                 collection = connection.collections[collectionName],
-                query = 'CREATE TABLE ' + collectionName,
+                query = 'CREATE TABLE ' + me.getTableName(collectionName, connection.config.schemaDB2),
                 schemaData = [],
                 schemaQuery = '';
 
