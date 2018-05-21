@@ -6,6 +6,10 @@ var async = require('async'),
     db2 = require('ibm_db'),
     WaterlineAdapterErrors = require('waterline-errors').adapter;
 
+var reservedKeywords = new Set([
+    "user",
+
+])
 
 var cleanValue = function(param,type){
     var newParam = null;
@@ -29,6 +33,17 @@ var cleanValue = function(param,type){
 
     }
     return newParam;
+}
+
+var cleanCol = function(columnName){
+    if (reservedKeywords.has(columnName.toLowerCase())){
+        return '"' + columnName.toUpperCase() + '"'
+    } 
+    else{
+        return columnName;
+    }
+
+    
 }
 /**
  * Sails Boilerplate Adapter
@@ -170,7 +185,7 @@ module.exports = (function () {
     };
 
     me.getSelectAttributes = function (collection) {
-        return _.keys(collection.definition).join(',');
+        return _.keys(collection.definition).map(cleanCol).join(',');
     };
 
     me.closeConnection = function (connection) {
@@ -353,9 +368,10 @@ module.exports = (function () {
          * @return {[type]}                  [description]
          */
         describe: function (connectionName, collectionName, cb) {
+            
             var connection = me.connections[connectionName],
                 collection = connection.collections[collectionName],
-                query = 'SELECT DISTINCT(NAME), COLTYPE, IDENTITY, KEYSEQ, NULLS FROM Sysibm.syscolumns WHERE tbname = ' + me.escape(collectionName);
+                query = 'SELECT DISTINCT(NAME), COLTYPE, IDENTITY, KEYSEQ, NULLS FROM Sysibm.syscolumns WHERE tbname = '  + me.escape(collectionName) + ' and tbcreator=' + me.escape(connection.config.schemaDB2);
 
             // @todo: use DB2 Database describe method instead of a SQL Query
             adapter.query(connectionName, collectionName, query, function (err, attrs) {
@@ -427,7 +443,7 @@ module.exports = (function () {
                         return dropTable(collectionName, passCallback);
                     });
 
-                    openConnection.query('DROP TABLE ' + collectionName, relations, passCallback);
+                    //openConnection.query('DROP TABLE ' + collectionName, relations, passCallback);
                 },
                 operationCallback = function (err, conn) {
                     if (err) return cb(err);
@@ -465,7 +481,7 @@ module.exports = (function () {
                         if (err) return cb(err);
                         cb(null, records);
                     };
-                    //console.log(query);
+                    console.debug(query);
                     if (_.isArray(data) && data.length > 0) openConnection.query(query, data, callback);
                     else openConnection.query(query, callback);
                 },
@@ -519,18 +535,18 @@ module.exports = (function () {
                         if (_.isArray(param)) {
                             var whereArr = [];
                             param.forEach(function (val) {
-                                      whereArr.push(column + ' = ?');
+                                      whereArr.push(cleanCol(column) + ' = ?');
                                     params.push(cleanValue(val,collection.definition[column].type))
                             });
                             whereData.push('(' + whereArr.join(' OR ') + ')');
                         }
                         else if (param['contains'] != null) {
-                                                       whereData.push(column + ' LIKE ?');
+                                                       whereData.push(cleanCol(column) + ' LIKE ?');
                                                        params.push( '%' + param['contains'] + '%' );
                                                 }
                         else {
                             if (collection.definition.hasOwnProperty(column)) {
-                                whereData.push(column + ' = ?');
+                                whereData.push(cleanCol(column) + ' = ?');
                                 params.push(cleanValue(param,collection.definition[column].type))
                             }
                         }
@@ -543,14 +559,14 @@ module.exports = (function () {
                         if (collection.definition.hasOwnProperty(column)) {
                             //ORDER BY APPLICATIONCODE DESC
 
-                            sortData.push(column + ' ' + direction);
+                            sortData.push(cleanCol(column) + ' ' + direction);
                         }
                     });
                     sortQuery += sortData.join(', ');
                     if (sortQuery.length > 0) sortQuery = ' ORDER BY ' + sortQuery;
 
                     sqlQuery += selectQuery + fromQuery + whereQuery + sortQuery + limitQuery;
-                    //console.log(sqlQuery,JSON.stringify(params));
+                    console.debug(sqlQuery,JSON.stringify(params));
                     openConnection.query(sqlQuery, params, function (err, result) {
                         me.closeConnection(openConnection);
                         if (err) return cb(err);
@@ -600,13 +616,14 @@ module.exports = (function () {
 
                     _.each(values, function (param, column) {
                         if (collection.definition.hasOwnProperty(column)) {
-                            columns.push(column);
+                            columns.push(cleanCol(column));
                             params.push(cleanValue(param,collection.definition[column].type))
                             questions.push('?');
                         }
                     });
+                    
                     var query = 'SELECT ' + selectQuery + ' FROM FINAL TABLE (INSERT INTO ' + me.getTableName(collection.tableName, connection.config.schemaDB2) + ' (' + columns.join(',') + ') VALUES (' + questions.join(',') + '))';
-                    //console.log(query,JSON.stringify(params));
+                    console.debug(query,JSON.stringify(params));
                     openConnection.query(query, params, function (err, results) {
                         me.closeConnection(openConnection);
                         if (err) cb(err);
@@ -651,7 +668,7 @@ module.exports = (function () {
 
                     _.each(values, function (param, column) {
                         if (collection.definition.hasOwnProperty(column) && !collection.definition[column].autoIncrement) {
-                            setData.push(column + ' = ?');
+                            setData.push(cleanCol(column) + ' = ?');
                             params.push(cleanValue(param,collection.definition[column].type))
                         }
                     });
@@ -659,7 +676,7 @@ module.exports = (function () {
 
                     _.each(options.where, function (param, column) {
                         if (collection.definition.hasOwnProperty(column)) {
-                            whereData.push(column + ' = ?');
+                            whereData.push(cleanCol(column) + ' = ?');
                             params.push(cleanValue(param,collection.definition[column].type))
                         }
                     });
@@ -668,7 +685,7 @@ module.exports = (function () {
                     if (whereQuery.length > 0) whereQuery = ' WHERE ' + whereQuery;
 
                     sqlQuery = 'SELECT ' + selectQuery + ' FROM FINAL TABLE (UPDATE ' + me.getTableName(collection.tableName, connection.config.schemaDB2) + setQuery + whereQuery + ')';
-                    //console.log(sqlQuery,JSON.stringify(params))
+                    console.debug(sqlQuery,JSON.stringify(params))
                     openConnection.query(sqlQuery, params, function (err, results) {
                         me.closeConnection(openConnection);
                         if (err) return cb(err);
@@ -707,7 +724,7 @@ module.exports = (function () {
 
                     _.each(options.where, function (param, column) {
                         if (collection.definition.hasOwnProperty(column)) {
-                            whereData.push(column + ' = ?');
+                            whereData.push(cleanCol(column) + ' = ?');
                             params.push(cleanValue(param,collection.definition[column].type))
                         }
                     });
