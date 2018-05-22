@@ -36,14 +36,14 @@ var cleanValue = function(param,type){
 }
 
 var cleanCol = function(columnName){
-    if (reservedKeywords.has(columnName.toLowerCase())){
-        return '"' + columnName.toUpperCase() + '"'
-    } 
-    else{
-        return columnName;
-    }
 
-    
+        return '"' + columnName + '"'
+
+}
+
+var cleanColForSelect = function(columnName){
+    return columnName;
+    return columnName +  " as " + '"' + columnName + '"';
 }
 /**
  * Sails Boilerplate Adapter
@@ -185,7 +185,7 @@ module.exports = (function () {
     };
 
     me.getSelectAttributes = function (collection) {
-        return _.keys(collection.definition).map(cleanCol).join(',');
+        return _.keys(collection.definition).map(cleanCol).map(cleanColForSelect).join(',');
     };
 
     me.closeConnection = function (connection) {
@@ -316,7 +316,7 @@ module.exports = (function () {
 
             _.each(definition, function (attribute, attrName) {
                 var attrType = me.getSqlType(attribute.type),
-                    attrQuery = attrName;
+                    attrQuery = '"' +  attrName + '"';
 
                 // @todo: handle unique and other DB2 data types
                 if (attribute.primaryKey) {
