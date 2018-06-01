@@ -28,7 +28,10 @@ module.exports.adapters = {
     user     : 'username',
     password : 'password',
     database : 'DB2 Database Name',
-    schemaDB2: 'my_schema'
+    schemaDB2: 'my_schema',
+    pool:true,
+    maxPoolSize:20,
+    debug:false
   }
 };
 ```
