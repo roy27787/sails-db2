@@ -11,6 +11,7 @@ var reservedKeywords = new Set([
 
 ])
 
+var debug = false;
 var cleanValue = function(param,type){
     var newParam = null;
     
@@ -251,14 +252,20 @@ module.exports = (function () {
             if (host && typeof host === 'string' && host.search(':') !== -1) connection.host = host.split(':')[0];
 
             connection.schemaDB2 = connection.schemaDB2 || connection.user;
-
+            if (connection.debug && connection.debug===true) debug = true;
             me.connections[connection.identity] = {
                 config: connection,
                 collections: collections,
-                pool: connection.pool ? new db2.Pool() : null,
+                pool:null,
                 conn: null
             };
-
+            if (connection.pool){
+                var pool = new db2.Pool();
+                if (connection.maxPoolSize) pool.setMaxPoolSize(connection.maxPoolSize)
+                me.connections[connection.identity]["pool"] = pool
+            }
+            
+            
             return cb();
         },
 
@@ -346,6 +353,7 @@ module.exports = (function () {
             schemaQuery += '(' + schemaData.join(',') + ')';
 
             query += ' ' + schemaQuery + " ORGANIZE BY ROW";
+            if (connection.debug) console.debug(query);
             //console.log(query);
             // @todo: use DB2 Database describe method instead of a SQL Query
             return adapter.query(connectionName, collectionName, query, function (err, result) {
@@ -481,7 +489,9 @@ module.exports = (function () {
                         if (err) return cb(err);
                         cb(null, records);
                     };
-                    console.debug(query);
+                    if (connection.debug) console.debug(query);
+                    console.log("querying...", query.substring(0,30));
+                    
                     if (_.isArray(data) && data.length > 0) openConnection.query(query, data, callback);
                     else openConnection.query(query, callback);
                 },
@@ -566,7 +576,7 @@ module.exports = (function () {
                     if (sortQuery.length > 0) sortQuery = ' ORDER BY ' + sortQuery;
 
                     sqlQuery += selectQuery + fromQuery + whereQuery + sortQuery + limitQuery;
-                    console.debug(sqlQuery,JSON.stringify(params));
+                    if (connection.debug) console.debug(sqlQuery,JSON.stringify(params));
                     openConnection.query(sqlQuery, params, function (err, result) {
                         me.closeConnection(openConnection);
                         if (err) return cb(err);
@@ -623,7 +633,7 @@ module.exports = (function () {
                     });
                     
                     var query = 'SELECT ' + selectQuery + ' FROM FINAL TABLE (INSERT INTO ' + me.getTableName(collection.tableName, connection.config.schemaDB2) + ' (' + columns.join(',') + ') VALUES (' + questions.join(',') + '))';
-                    console.debug(query,JSON.stringify(params));
+                    if (connection.debug) console.debug(query,JSON.stringify(params));
                     openConnection.query(query, params, function (err, results) {
                         me.closeConnection(openConnection);
                         if (err) cb(err);
@@ -685,7 +695,7 @@ module.exports = (function () {
                     if (whereQuery.length > 0) whereQuery = ' WHERE ' + whereQuery;
 
                     sqlQuery = 'SELECT ' + selectQuery + ' FROM FINAL TABLE (UPDATE ' + me.getTableName(collection.tableName, connection.config.schemaDB2) + setQuery + whereQuery + ')';
-                    console.debug(sqlQuery,JSON.stringify(params))
+                    if (connection.debug) console.debug(sqlQuery,JSON.stringify(params))
                     openConnection.query(sqlQuery, params, function (err, results) {
                         me.closeConnection(openConnection);
                         if (err) return cb(err);
