@@ -104,7 +104,7 @@ module.exports = (function () {
             'PORT=' + connection.config.port,
             'PROTOCOL=TCPIP'
         ];
-
+        if (connection.config.ssl && connection.config.ssl == true ) connectionData.push("Security=SSL")
         return connectionData.join(';');
     };
 
